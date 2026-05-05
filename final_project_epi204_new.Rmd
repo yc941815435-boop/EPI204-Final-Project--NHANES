@@ -1,0 +1,193 @@
+---
+title: "final_project_epi204"
+output: html_document
+date: "2026-04-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Processing
+
+```{r}
+#load library
+library(geepack)
+library(lmtest)
+library(tidyverse)
+library(readr)
+library(tableone)
+
+```
+
+```{r}
+nhanes <- read_csv("NHANES2.csv")
+```
+
+```{r}
+## Data setup
+## Data Structure
+### confirming one row per person
+length(unique(nhanes$SEQNO)) == nrow(nhanes)
+
+# Selecting variables of interest:
+
+nhanes <- nhanes |>
+  select(
+    # admin vars
+    c(SEQNO, AGEYRS, AGEDIE, LAST_YR, BORN_YR, DEATH, DIE_YR,
+    # exposure
+      NIACIN,
+    # chronic conditions/comorbidities
+      ANGINA, ARTHRITI, ASPIRIN , EVPREG, HTN_REP, STROKE, 
+    # sociodempgraphic variables
+      MARRY, RACE, SEX, URBAN, SCHOOL,
+    # lifestyle variables
+      BOOZE, RECEX, AVGSMK, HEIGHT, WT)
+  )
+
+### Missingness
+
+# Niacin Quantiles
+
+niacin_qval <- nhanes %>%
+  filter(!is.na(NIACIN)) %>%
+  summarise(p25 = quantile(NIACIN, probs = 0.25),
+            p50 = quantile(NIACIN, probs = 0.50),
+            p75 = quantile(NIACIN, probs = 0.75))
+
+nhanes$niacin_q <- ifelse(nhanes$NIACIN < niacin_qval$p25, 1, 
+                         ifelse(nhanes$NIACIN >= niacin_qval$p25 & nhanes$NIACIN < niacin_qval$p50, 2, 
+                                ifelse(nhanes$NIACIN >= niacin_qval$p50 & nhanes$NIACIN < niacin_qval$p75, 3, 
+                                       ifelse(nhanes$NIACIN > niacin_qval$p75, 4, NA))))
+table(nhanes$niacin_q)
+
+# Variable Operationalization
+## BMI, person-time for Poisson analysis
+nhanes <- nhanes |>
+  mutate(
+    # using age as the time scale
+    # time zero is age at entry
+    age_tstart = AGEYRS,
+    # end of follow up is censoring or death
+    age_tend = LAST_YR - BORN_YR,
+    pt = age_tend - age_tstart,
+    bmi = WT/(HEIGHT/100)^2
+  )
+
+# Checking something funky going on with time variables
+table(!is.na(nhanes$BORN_YR))
+table(!is.na(nhanes$LAST_YR))
+
+nhanes_check <- nhanes |>
+  filter(is.na(BORN_YR),
+         is.na(LAST_YR))
+
+nhanes_model <- nhanes |>
+  filter(
+    is.na(pt),
+    pt > 0
+  )
+
+#a quick look at covariates with missingness
+library(naniar)
+gg_miss_var(nhanes)
+
+```
+
+
+
+
+## Model 1: Cox PH Regression
+
+```{r}
+# Example Cox PH code
+#fit.cox.1<-coxph(Surv(AGEDEATH, DEATH) ~ AGEYRS + COVARIATES, data = nhanes, ties='efron')
+#summary(fit.cox.1)
+
+#checking Schoenfeld Residuals
+#check.pha<-cox.zph(fit.cox.1)
+#ggcoxzph(check.pha[1])
+
+```
+
+
+## Model 2: Poisson Model
+
+
+```{r}
+#Example Poisson code
+#fit.pois1 <- glm(DEATH ~ AGEYRS + COVARIATES, data=nhanes, offset=OFFSET, family=poisson(link='log')) #specify COVARIATES and offset to run this model
+#summary(fit.pois1)
+```
+
+
+
+## Table 1 
+Describing relevant basic characteristics of study participants according to exposure categories of your choice
+
+```{r}
+nhanes2<-nhanes %>% 
+  mutate(sex=factor(SEX, labels=c("male", "female"), levels=c(1,2)), 
+         age= AGEYRS,
+         angina=factor(ANGINA, levels=c(0,1)),
+         arthritis = factor(ARTHRITI, levels=c(0,1)),
+         aspirin = factor(ASPIRIN, levels=c(0,1)),
+         ever_pregnant=factor(EVPREG,levels=c(0,1)), # might need to show it only among females
+         hypertension=factor(HTN_REP,levels=c(0,1)),
+         marital_status=factor(MARRY, 
+                               labels=c("Under 17", "Married", "Widowed",
+                                        "Divorced", "Separated", "Never Married",
+                                        "Blank, but applicable"), 
+                               levels=c(1,2,3,4,5,6,8)),
+         race=factor(RACE,
+                     labels=c("White","Black","Other"),
+                     levels=c(1,2,3)),
+         urban=factor(URBAN,
+                      labels=c("Yes", "No"), levels=c(1,2)),
+         school=factor(SCHOOL,
+                       labels=c("Elementary", "Some high school", 
+                                      "High school", "Some college", "College"), 
+                               levels=c(1,2,3,4,5)),
+         alcohol=as.numeric(BOOZE),
+         recex=factor(RECEX, labels=c("High","Medium","Low"),levels=c(1,2,3)),
+         smoking=as.numeric(AVGSMK))
+
+vars <- (c("sex", "age","angina","arthritis", 
+           "aspirin","ever_pregnant","hypertension",
+           "marital_status", "race", "urban",
+           "school", "alcohol", 
+           "recex", "smoking",
+           "bmi")) # include more covariates as needed
+
+# Table 1 needs complete case
+
+t1 <- CreateTableOne(vars = vars, data = nhanes2, strata = as.factor("niacin_q"))
+options(digits = 2)
+print(t1, showAllLevels = TRUE)
+```
+
+
+## Table 2
+Present the age-adjusted and multivariable-adjusted results of the association generated from both of your models
+
+```{r}
+
+
+```
+
+
+
+## Table 3
+Give the multivariable-adjusted results in each category of the effect modifier (sex), and p-values for interaction (using the primary model of your choice only)
+
+```{r}
+
+```
+
+
+
+
+
+
+
