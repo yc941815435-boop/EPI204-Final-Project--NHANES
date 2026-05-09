@@ -29,14 +29,18 @@ nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 ```
 
 ```{r}
-## Data setup
-## Data Structure
-### confirming one row per person
+# Data setup
+
+## Data checks
+### Confirm one row per person
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
 
-# Selecting variables of interest:
+```
 
-nhanes <- nhanes |>
+```{r}
+## Select variables of interest
+
+nhanes_analytic <- nhanes |>
   select(
     # admin vars
     c(SEQNO, AGEYRS, AGEDIE, LAST_YR, BORN_YR, DEATH, DIE_YR,
@@ -50,25 +54,68 @@ nhanes <- nhanes |>
       BOOZE, RECEX, AVGSMK, HEIGHT, WT)
   )
 
-### Missingness
+### Review covariate missingness
+library(naniar)
+gg_miss_var(nhanes_analytic)
+miss_var_summary(nhanes_analytic)
 
-# Niacin Quantiles
+# AB: AGEDIE, DIE_YR are not at all well populated (~80% missing) though DEATH outcome is not that bad (~17.8% missing)
+# AB: LAST_YR is probably our best bet for censoring (discard participants with missing LAST_YR - ~17.8%)
+# AB: EVPREG is not a good one to use either (~56.8% missing)
 
-niacin_qval <- nhanes %>%
-  filter(!is.na(NIACIN)) %>%
+# AB: Test out N for final analytical sample if we keep only participants with covariates of interest (excepting those highlighted above)
+
+nhanes_final <- nhanes_analytic |>
+  filter(!is.na(NIACIN),
+         !is.na(ANGINA),
+         !is.na(STROKE),
+         !is.na(HTN_REP),
+         !is.na(LAST_YR),
+         !is.na(BORN_YR),
+         !is.na(DEATH),
+         !is.na(URBAN),
+         !is.na(SCHOOL),
+         !is.na(ARTHRITI)) |>
+  select(-c(AGEDIE, DIE_YR, EVPREG)) #discard variables with large % missing
+
+nrow(nhanes_final) #8,490 patients, good sample size
+```
+
+```{r}
+# Create niacin quartiles
+niacin_qval <- nhanes_final %>%
   summarise(p25 = quantile(NIACIN, probs = 0.25),
             p50 = quantile(NIACIN, probs = 0.50),
             p75 = quantile(NIACIN, probs = 0.75))
 
-nhanes$niacin_q <- ifelse(nhanes$NIACIN < niacin_qval$p25, 1, 
-                         ifelse(nhanes$NIACIN >= niacin_qval$p25 & nhanes$NIACIN < niacin_qval$p50, 2, 
-                                ifelse(nhanes$NIACIN >= niacin_qval$p50 & nhanes$NIACIN < niacin_qval$p75, 3, 
-                                       ifelse(nhanes$NIACIN > niacin_qval$p75, 4, NA))))
-table(nhanes$niacin_q)
+nhanes_final$niacin_q <- ifelse(
+  nhanes_final$NIACIN < niacin_qval$p25, 1, 
+                         ifelse(
+                           nhanes_final$NIACIN >= niacin_qval$p25 & nhanes_final$NIACIN < niacin_qval$p50, 2, 
+                                ifelse(
+                                  nhanes_final$NIACIN >= niacin_qval$p50 & nhanes_final$NIACIN < niacin_qval$p75, 3, 
+                                       ifelse(
+                                         nhanes_final$NIACIN > niacin_qval$p75, 4, NA))))
+
+# AB: Check with cut
+qs <- quantile(nhanes_final$NIACIN,
+               probs = seq(0, 1, 0.25),
+               na.rm = TRUE)
+
+test <- nhanes_final
+test$niacin_qt <- cut(test$NIACIN,
+            breaks = qs,
+            include.lowest = TRUE,
+            labels = c("Q1", "Q2", "Q3", "Q4"))
+table(nhanes_final$niacin_q)
+table(test$niacin_qt) # Slight difference
+```
+
+```{r}
 
 # Variable Operationalization
 ## BMI, person-time for Poisson analysis
-nhanes <- nhanes |>
+nhanes_analytic <- nhanes_analytic |>
   mutate(
     # using age as the time scale
     # time zero is age at entry
@@ -80,22 +127,19 @@ nhanes <- nhanes |>
   )
 
 # Checking something funky going on with time variables
-table(!is.na(nhanes$BORN_YR))
-table(!is.na(nhanes$LAST_YR))
+table(!is.na(nhanes_analytic$BORN_YR))
+table(!is.na(nhanes_analytic$LAST_YR))
 
-nhanes_check <- nhanes |>
+nhanes_check <- nhanes_analytic |>
   filter(is.na(BORN_YR),
          is.na(LAST_YR))
 
-nhanes_model <- nhanes |>
+nhanes_model <- nhanes_analytic |>
   filter(
     is.na(pt),
     pt > 0
   )
 
-#a quick look at covariates with missingness
-library(naniar)
-gg_miss_var(nhanes)
 
 ```
 
