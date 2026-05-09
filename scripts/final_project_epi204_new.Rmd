@@ -10,14 +10,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Data Processing
 
-```{r}
-#load library
+```{r setup, include = FALSE}
+# # Clear environment 
+rm(list = ls())
+
+# Load dependencies
 library(geepack)
 library(lmtest)
 library(tidyverse)
 library(readr)
 library(tableone)
-
+library(dplyr)
 ```
 
 ```{r}
