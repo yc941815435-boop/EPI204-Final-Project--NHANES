@@ -82,33 +82,45 @@ nrow(nhanes_final) #8,490 patients, good sample size
 ```
 
 ```{r}
+# Summarize niacin
+summary(nhanes_final$NIACIN, useNA = "ifany")
+
 # Create niacin quartiles
 niacin_qval <- nhanes_final %>%
   summarise(p25 = quantile(NIACIN, probs = 0.25),
             p50 = quantile(NIACIN, probs = 0.50),
             p75 = quantile(NIACIN, probs = 0.75))
 
-nhanes_final$niacin_q <- ifelse(
-  nhanes_final$NIACIN < niacin_qval$p25, 1, 
+nhanes_final <- nhanes_final |>
+  mutate(niacin_q = ifelse(
+    nhanes_final$NIACIN < niacin_qval$p25, 1, 
                          ifelse(
                            nhanes_final$NIACIN >= niacin_qval$p25 & nhanes_final$NIACIN < niacin_qval$p50, 2, 
                                 ifelse(
                                   nhanes_final$NIACIN >= niacin_qval$p50 & nhanes_final$NIACIN < niacin_qval$p75, 3, 
-                                       ifelse(
-                                         nhanes_final$NIACIN > niacin_qval$p75, 4, NA))))
+                                       ifelse(# AB: this part of the code was leaving out two participants exactly at the cutoff of p75; changed > to >= 
+                                         nhanes_final$NIACIN >= niacin_qval$p75, 4, NA)))))
 
 # AB: Check with cut
 qs <- quantile(nhanes_final$NIACIN,
                probs = seq(0, 1, 0.25),
                na.rm = TRUE)
 
-test <- nhanes_final
-test$niacin_qt <- cut(test$NIACIN,
+# test <- nhanes_final
+nhanes_final$niacin_q_test <- cut(test$NIACIN,
             breaks = qs,
-            include.lowest = TRUE,
-            labels = c("Q1", "Q2", "Q3", "Q4"))
-table(nhanes_final$niacin_q)
-table(test$niacin_qt) # Slight difference
+            include.lowest = FALSE,
+            labels = c(1, 2, 3, 4))
+
+table(nhanes_final$niacin_q_test, useNA = "ifany")
+table(test$niacin_qt, useNA = "ifany") 
+
+subset_unequal <- nhanes_final |>
+  filter(niacin_q != niacin_q_test) |>
+  select(c(SEQNO, NIACIN, niacin_q, niacin_q_test))
+
+nhanes_final <- nhanes_final |>
+  select(-c(niacin_q_test))
 ```
 
 ```{r}
