@@ -24,7 +24,8 @@ library(dplyr)
 ```
 
 ```{r}
-nhanes <- read_csv("NHANES2.csv")
+DirPath <- getwd()
+nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 ```
 
 ```{r}
