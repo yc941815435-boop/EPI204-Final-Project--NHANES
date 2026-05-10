@@ -21,6 +21,8 @@ library(tidyverse)
 library(readr)
 library(tableone)
 library(dplyr)
+library(survival)
+library(survminer)
 ```
 
 ```{r}
@@ -74,12 +76,10 @@ miss_var_summary(nhanes_analytic)
 table(nhanes$AGEDIE, nhanes$DEATH, useNA = "ifany") # AB: no data for those 2,008 we're excluding. those with NA for AGEDIE are coded as 0 for DEATH
 
 table(nhanes_analytic$EVPREG, nhanes_analytic$SEX)
-# EVPREG missing only for assigned male at birth - update variable below to counter missingnnes
+# EVPREG missing only for assigned male at birth; keep but may only be usable for analysis among those assigned female at birth? Check notes below.
 
 # AB: Test out N for final analytical sample if we keep only participants with covariates of interest (excepting those highlighted above)
 nhanes_final <- nhanes_analytic |>
-  mutate(EVPREG = ifelse(is.na(EVPREG) & SEX == 1, "Not Applicable",
-                         EVPREG)) |>
   filter(!is.na(NIACIN),
          !is.na(ANGINA),
          !is.na(STROKE),
@@ -89,8 +89,7 @@ nhanes_final <- nhanes_analytic |>
          !is.na(DEATH),
          !is.na(URBAN),
          !is.na(SCHOOL),
-         !is.na(ARTHRITI),
-         !is.na(EVPREG)) 
+         !is.na(ARTHRITI)) 
 
 nrow(nhanes_final) #8,459 patients
 ```
@@ -152,18 +151,41 @@ mutate(
   age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR),
   person_time = age_tend - age_tstart,
   event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
-  bmi = WT/(HEIGHT/100)^2
+  BMI = WT/(HEIGHT/100)^2
 )
 
 nhanes_model <- nhanes_final_2 |>
   filter(
-    is.na(person_time),
+    !is.na(person_time),
     person_time > 0
   )
 
-summary(nhanes_model$person_time) # max 63 years of FU
-```
+summary(nhanes_model$person_time) # min 1 and max 63 years of FU
 
+# Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
+cov_basic <- c(
+  "SEX",
+  "RACE",
+  "SCHOOL"
+)
+
+cov_full <- c(
+  "SEX",
+  "RACE",
+  "SCHOOL",
+  "MARRY",
+  "URBAN",
+  "BOOZE",
+  "AVGSMK",
+  "BMI",
+  "ANGINA",
+  "ARTHRITI",
+  "ASPIRIN",
+  "HTN_REP",
+  "STROKE"
+) # AB: did not add EVPREG - may be something we want to consider for the model only among AFAB? Interpretation would be weird if we included it for everyone
+
+```
 
 ## Model 1: Poisson Model (Primary)
 
@@ -177,18 +199,63 @@ summary(nhanes_model$person_time) # max 63 years of FU
 ## Model 2: Cox PH Model (Sensitivity)
 
 ```{r}
-# Example Cox PH code
-#fit.cox.1<-coxph(Surv(AGEDEATH, DEATH) ~ AGEYRS + COVARIATES, data = nhanes, ties='efron')
-coxph(
-  Surv(entry_age, exit_age, event) ~ exposure + covariates,
-  data = df
+# Unadjusted model
+fit.cox.unadj <- coxph(
+  Surv(age_tstart, age_tend, event) ~ niacin_q,
+  data = nhanes_model,
+  ties = 'efron'
 )
-#summary(fit.cox.1)
+summary(fit.cox.unadj)
+```
 
+```{r}
+# Minimally adjusted model
+fit.cox.min.adj <- coxph(
+  as.formula(
+  paste(
+    "Surv(age_tstart, age_tend, event) ~ niacin_q +",
+    paste(cov_basic, collapse = " + ")
+  )),
+  data = nhanes_model,
+  ties = 'efron'
+)
+summary(fit.cox.min.adj)
+```
+
+```{r}
+# Fully adjusted model
+fit.cox.full.adj <- coxph(
+  as.formula(
+  paste(
+    "Surv(age_tstart, age_tend, event) ~ niacin_q +",
+    paste(cov_full, collapse = " + ")
+  )),
+  data = nhanes_model,
+  ties = 'efron'
+)
+summary(fit.cox.full.adj)
+```
+
+```{r}
 #checking Schoenfeld Residuals
-#check.pha<-cox.zph(fit.cox.1)
-#ggcoxzph(check.pha[1])
+check.pha<-cox.zph(fit.cox.full.adj)
+ggcoxzph(check.pha[1]) #AB: niacin_q seems to be violating the PH assumption; could we do interaction with time?
+```
+```{r}
+test.cox <- coxph(
+ as.formula(
+  paste(
+    "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
+    paste(cov_full, collapse = " + ")
+  )),
+    
+  tt = function(x, t, ...) x * log(t),
+  
+  data = nhanes_model,
+  ties = "efron"
+)
 
+summary(test.cox)
 ```
 
 
