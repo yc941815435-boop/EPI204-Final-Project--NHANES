@@ -34,7 +34,6 @@ nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 ## Data checks
 ### Confirm one row per person
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
-
 ```
 
 ```{r}
@@ -43,7 +42,10 @@ length(unique(nhanes$SEQNO)) == nrow(nhanes)
 nhanes_analytic <- nhanes |>
   select(
     # admin vars
-    c(SEQNO, AGEYRS, AGEDIE, LAST_YR, BORN_YR, DEATH, DIE_YR,
+    c(SEQNO, AGEYRS, AGEDIE, 
+      LAST_YR, LAST_MO, LAST_DAY, 
+      BORN_YR, BORN_MO, 
+      DEATH, DIE_YR, DIE_MO,
     # exposure
       NIACIN,
     # chronic conditions/comorbidities
@@ -59,13 +61,25 @@ library(naniar)
 gg_miss_var(nhanes_analytic)
 miss_var_summary(nhanes_analytic)
 
-# AB: AGEDIE, DIE_YR are not at all well populated (~80% missing) though DEATH outcome is not that bad (~17.8% missing)
-# AB: LAST_YR is probably our best bet for censoring (discard participants with missing LAST_YR - ~17.8%)
-# AB: EVPREG is not a good one to use either (~56.8% missing)
+# Checking something funky going on with time variables
+# table(!is.na(nhanes_analytic$BORN_YR))
+# table(!is.na(nhanes_analytic$LAST_YR))
+
+# check <- nhanes_analytic |>
+#   filter(is.na(BORN_YR),
+#          is.na(LAST_YR))
+
+# AB: AGEDIE, DIE_YR are not well populated (~80% missing) though DEATH outcome is not that bad (~17.8% missing); just checked and it's because AGEDIE and DIE_YR are listed NA for those who have DEATH = 1; let's keep even with missing - these are not covars
+
+table(nhanes$AGEDIE, nhanes$DEATH, useNA = "ifany") # AB: no data for those 2,008 we're excluding. those with NA for AGEDIE are coded as 0 for DEATH
+
+table(nhanes_analytic$EVPREG, nhanes_analytic$SEX)
+# EVPREG missing only for assigned male at birth - update variable below to counter missingnnes
 
 # AB: Test out N for final analytical sample if we keep only participants with covariates of interest (excepting those highlighted above)
-
 nhanes_final <- nhanes_analytic |>
+  mutate(EVPREG = ifelse(is.na(EVPREG) & SEX == 1, "Not Applicable",
+                         EVPREG)) |>
   filter(!is.na(NIACIN),
          !is.na(ANGINA),
          !is.na(STROKE),
@@ -75,10 +89,10 @@ nhanes_final <- nhanes_analytic |>
          !is.na(DEATH),
          !is.na(URBAN),
          !is.na(SCHOOL),
-         !is.na(ARTHRITI)) |>
-  select(-c(AGEDIE, DIE_YR, EVPREG)) #discard variables with large % missing
+         !is.na(ARTHRITI),
+         !is.na(EVPREG)) 
 
-nrow(nhanes_final) #8,490 patients, good sample size
+nrow(nhanes_final) #8,459 patients
 ```
 
 ```{r}
@@ -91,6 +105,8 @@ niacin_qval <- nhanes_final %>%
             p50 = quantile(NIACIN, probs = 0.50),
             p75 = quantile(NIACIN, probs = 0.75))
 
+niacin_qval_vec <- as.vector(niacin_qval)
+
 nhanes_final <- nhanes_final |>
   mutate(niacin_q = ifelse(
     nhanes_final$NIACIN < niacin_qval$p25, 1, 
@@ -102,77 +118,54 @@ nhanes_final <- nhanes_final |>
                                          nhanes_final$NIACIN >= niacin_qval$p75, 4, NA)))))
 
 # AB: Check with cut
-qs <- quantile(nhanes_final$NIACIN,
-               probs = seq(0, 1, 0.25),
-               na.rm = TRUE)
-
-# test <- nhanes_final
-nhanes_final$niacin_q_test <- cut(test$NIACIN,
-            breaks = qs,
-            include.lowest = FALSE,
-            labels = c(1, 2, 3, 4))
-
-table(nhanes_final$niacin_q_test, useNA = "ifany")
-table(test$niacin_qt, useNA = "ifany") 
-
-subset_unequal <- nhanes_final |>
-  filter(niacin_q != niacin_q_test) |>
-  select(c(SEQNO, NIACIN, niacin_q, niacin_q_test))
-
-nhanes_final <- nhanes_final |>
-  select(-c(niacin_q_test))
+# qs <- quantile(nhanes_final$NIACIN,
+#                probs = seq(0, 1, 0.25),
+#                na.rm = TRUE)
+# 
+# # test <- nhanes_final
+# nhanes_final$niacin_q_test <- cut(nhanes_final$NIACIN,
+#             breaks = qs,
+#             include.lowest = FALSE,
+#             labels = c(1, 2, 3, 4))
+# 
+# table(nhanes_final$niacin_q_test, useNA = "ifany")
+# table(nhanes_final$niacin_q, useNA = "ifany") 
+# 
+# subset_unequal <- nhanes_final |>
+#   filter(niacin_q != niacin_q_test) |>
+#   select(c(SEQNO, NIACIN, niacin_q, niacin_q_test))
+# 
+# nhanes_final <- nhanes_final |>
+#   select(-c(niacin_q_test))
 ```
 
 ```{r}
-
 # Variable Operationalization
-## BMI, person-time for Poisson analysis
-nhanes_analytic <- nhanes_analytic |>
-  mutate(
-    # using age as the time scale
-    # time zero is age at entry
-    age_tstart = AGEYRS,
-    # end of follow up is censoring or death
-    age_tend = LAST_YR - BORN_YR,
-    pt = age_tend - age_tstart,
-    bmi = WT/(HEIGHT/100)^2
-  )
+# BMI, person-time for Poisson analysis
+nhanes_final_2 <- nhanes_final |>
+mutate(
+  # using age as the time scale; person-time accumulates in age years
+  # time zero is age at entry
+  age_tstart = AGEYRS,
+  # end of follow up is censoring or death
+  # age_tend = LAST_YR - BORN_YR,
+  age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR),
+  person_time = age_tend - age_tstart,
+  event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
+  bmi = WT/(HEIGHT/100)^2
+)
 
-# Checking something funky going on with time variables
-table(!is.na(nhanes_analytic$BORN_YR))
-table(!is.na(nhanes_analytic$LAST_YR))
-
-nhanes_check <- nhanes_analytic |>
-  filter(is.na(BORN_YR),
-         is.na(LAST_YR))
-
-nhanes_model <- nhanes_analytic |>
+nhanes_model <- nhanes_final_2 |>
   filter(
-    is.na(pt),
-    pt > 0
+    is.na(person_time),
+    person_time > 0
   )
 
-
+summary(nhanes_model$person_time) # max 63 years of FU
 ```
 
 
-
-
-## Model 1: Cox PH Regression
-
-```{r}
-# Example Cox PH code
-#fit.cox.1<-coxph(Surv(AGEDEATH, DEATH) ~ AGEYRS + COVARIATES, data = nhanes, ties='efron')
-#summary(fit.cox.1)
-
-#checking Schoenfeld Residuals
-#check.pha<-cox.zph(fit.cox.1)
-#ggcoxzph(check.pha[1])
-
-```
-
-
-## Model 2: Poisson Model
+## Model 1: Poisson Model (Primary)
 
 
 ```{r}
@@ -181,6 +174,22 @@ nhanes_model <- nhanes_analytic |>
 #summary(fit.pois1)
 ```
 
+## Model 2: Cox PH Model (Sensitivity)
+
+```{r}
+# Example Cox PH code
+#fit.cox.1<-coxph(Surv(AGEDEATH, DEATH) ~ AGEYRS + COVARIATES, data = nhanes, ties='efron')
+coxph(
+  Surv(entry_age, exit_age, event) ~ exposure + covariates,
+  data = df
+)
+#summary(fit.cox.1)
+
+#checking Schoenfeld Residuals
+#check.pha<-cox.zph(fit.cox.1)
+#ggcoxzph(check.pha[1])
+
+```
 
 
 ## Table 1 
