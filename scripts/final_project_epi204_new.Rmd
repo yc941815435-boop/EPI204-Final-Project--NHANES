@@ -321,12 +321,153 @@ tidy_poisson3 <- tidy_model3 %>%
   )
 tidy_poisson3
 ```
+
+### Model 1.4: Fully adjusted model + EMM by Sex
+
+```{r}
+form.pois4 <- as.formula(
+  paste(
+    "death_in_year ~ NIACIN + NIACIN*SEX +",
+    paste(cov_full, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois4 <- glm(form.pois4,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+summary(fit.pois4)
+```
+
+```{r}
+## Poisson Model 1.4 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov4 <- sandwich::vcovHC(fit.pois4, type = "HC3")
+tidy_model4 <- broom::tidy(fit.pois4, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results4 <- coeftest(fit.pois4, vcov = robust_vcov4)
+tidy_model4$std.error <- robust_results4[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson4 <- tidy_model4 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson4
+```
+
+### Stratified Analysis
+
+#### Stratifying data
+```{r}
+nhanes_final_poisson_male <- nhanes_final_poisson |>
+  filter(SEX == 1)
+
+nhanes_final_poisson_female <- nhanes_final_poisson |>
+  filter(SEX == 2)
+```
+
+#### Full covariate set for stratified models
+```{r}
+cov_full_stratified <- c(
+  "RACE",
+  "SCHOOL",
+  "MARRY",
+  "URBAN",
+  "BOOZE",
+  "AVGSMK",
+  "BMI",
+  "ANGINA",
+  "ARTHRITI",
+  "ASPIRIN",
+  "HTN_REP",
+  "STROKE"
+)
+```
+
+### Model 1.5: Fully-adjusted model stratified by sex - male
+
+```{r}
+form.pois5 <- as.formula(
+  paste(
+    "death_in_year ~ NIACIN + ",
+    paste(cov_full_stratified, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois5 <- glm(form.pois5,
+                 data=nhanes_final_poisson_male, 
+                 family=poisson(link='log'))
+summary(fit.pois5)
+```
+
+```{r}
+## Poisson Model 1.5 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov5 <- sandwich::vcovHC(fit.pois5, type = "HC3")
+tidy_model5 <- broom::tidy(fit.pois5, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results5 <- coeftest(fit.pois5, vcov = robust_vcov5)
+tidy_model5$std.error <- robust_results5[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson5 <- tidy_model5 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson5
+```
+
+### Model 1.6: Fully-adjusted model stratified by sex - female
+
+```{r}
+form.pois6 <- as.formula(
+  paste(
+    "death_in_year ~ NIACIN + ",
+    paste(cov_full_stratified, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois6 <- glm(form.pois6,
+                 data=nhanes_final_poisson_female, 
+                 family=poisson(link='log'))
+summary(fit.pois6)
+```
+
+```{r}
+## Poisson Model 1.4 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov6 <- sandwich::vcovHC(fit.pois6, type = "HC3")
+tidy_model6 <- broom::tidy(fit.pois6, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results6 <- coeftest(fit.pois6, vcov = robust_vcov6)
+tidy_model6$std.error <- robust_results6[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson6 <- tidy_model6 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson6
+```
+
 #### Exporting results
 
 ```{r}
 write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
 write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
 write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
+write.csv(tidy_poisson4, "nhanes_poisson_4_results.csv", row.names = FALSE)
+write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
+write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
 ```
 
 ### Non-linearity Check:
