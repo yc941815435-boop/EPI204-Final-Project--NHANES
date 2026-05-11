@@ -386,14 +386,65 @@ tidy_poisson4
 
 ```{r}
 poisson_emm_results <- data.frame(
-  coefs = robust_results4[c("", "NIACIN", "SEX", "NIACIN:SEX"), "Estimate"],
-  se = robust_results4[c("NIACIN", "SEX", "NIACIN:SEX"), "Std. Error"]
+  coefs = robust_results4[c("niacin_q2", "niacin_q3", "niacin_q4", "SEX", "niacin_q2:SEX", "niacin_q3:SEX", "niacin_q4:SEX"), "Estimate"],
+  se = robust_results4[c("niacin_q2", "niacin_q3", "niacin_q4", "SEX", "niacin_q2:SEX", "niacin_q3:SEX", "niacin_q4:SEX"), "Std. Error"]
 )
-poisson_emm_results$variance <- poisson_emm_results$se^2
-hr.male.var <- 
+poisson_emm_results$variance <- (poisson_emm_results$se)^2 
+v <- robust_vcov4
 
 ```
 
+## Table 3: HRs for FEMALES (SEX == 1)
+
+```{r}
+female.hr <- data.frame(
+  niacin_q = c("niacin_q2", "niacin_q3", "niacin_q4"),
+  variance = c(
+    v["niacin_q2", "niacin_q2"] + v["niacin_q2:SEX", "niacin_q2:SEX"] + 2*v["niacin_q2", "niacin_q2:SEX"],
+    v["niacin_q3", "niacin_q3"] + v["niacin_q3:SEX", "niacin_q3:SEX"] + 2*v["niacin_q3", "niacin_q3:SEX"],
+    v["niacin_q4", "niacin_q4"] + v["niacin_q4:SEX", "niacin_q4:SEX"] + 2*v["niacin_q4", "niacin_q4:SEX"]),
+  coef = c(
+    robust_results4[c("niacin_q2"), "Estimate"] + robust_results4[c("niacin_q2:SEX"), "Estimate"],
+    robust_results4[c("niacin_q3"), "Estimate"] + robust_results4[c("niacin_q3:SEX"), "Estimate"],
+    robust_results4[c("niacin_q4"), "Estimate"] + robust_results4[c("niacin_q4:SEX"), "Estimate"]),
+    sex = c("female", "female", "female")
+)
+
+female.hr <- female.hr |>
+  mutate(
+    hr = exp(coef),
+    lcl = exp(coef - (qnorm(0.975)*sqrt(variance))),
+    ucl = exp(coef + (qnorm(0.975)*sqrt(variance)))
+  )
+```
+
+## Table 3: HRs for MALEs (SEX == 0)
+
+```{r}
+male.hr <- data.frame(
+  niacin_q = c("niacin_q2", "niacin_q3", "niacin_q4"),
+  variance = c(
+    v["niacin_q2", "niacin_q2"],
+    v["niacin_q3", "niacin_q3"],
+    v["niacin_q4", "niacin_q4"]),
+  coef = c(
+    robust_results4[c("niacin_q2"), "Estimate"],
+    robust_results4[c("niacin_q3"), "Estimate"],
+    robust_results4[c("niacin_q4"), "Estimate"]),
+  sex = c("male", "male", "male")
+)
+
+male.hr <- male.hr |>
+  mutate(
+    hr = exp(coef),
+    lcl = exp(coef - (qnorm(0.975)*sqrt(variance))),
+    ucl = exp(coef + (qnorm(0.975)*sqrt(variance)))
+  )
+```
+
+```{r}
+hr.emm.sex <- rbind(female.hr, male.hr)
+```
 
 ### Stratified Analysis
 
@@ -402,8 +453,11 @@ hr.male.var <-
 nhanes_final_poisson_male <- nhanes_final_poisson |>
   filter(SEX == 0)
 
+table(nhanes_final_poisson_male$niacin_q)
+
 nhanes_final_poisson_female <- nhanes_final_poisson |>
   filter(SEX == 1)
+table(nhanes_final_poisson_female$niacin_q)
 ```
 
 #### Full covariate set for stratified models
@@ -502,7 +556,8 @@ tidy_poisson6
 write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
 write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
 write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
-write.csv(tidy_poisson4, "nhanes_poisson_4_results.csv", row.names = FALSE)
+write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
+write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
 write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
 write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
 ```
