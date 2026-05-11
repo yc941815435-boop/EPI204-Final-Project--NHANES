@@ -23,6 +23,7 @@ library(tableone)
 library(dplyr)
 library(survival)
 library(survminer)
+library(splines)
 ```
 
 ```{r}
@@ -140,7 +141,7 @@ nhanes_final <- nhanes_final |>
 
 ```{r}
 # Variable Operationalization
-# BMI, person-time for Poisson analysis
+# BMI, person-time
 nhanes_final_2 <- nhanes_final |>
 mutate(
   # using age as the time scale; person-time accumulates in age years
@@ -148,7 +149,7 @@ mutate(
   age_tstart = AGEYRS,
   # end of follow up is censoring or death
   # age_tend = LAST_YR - BORN_YR,
-  age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR),
+  age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR - BORN_YR),
   person_time = age_tend - age_tstart,
   event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
   BMI = WT/(HEIGHT/100)^2
@@ -160,7 +161,7 @@ nhanes_model <- nhanes_final_2 |>
     person_time > 0
   )
 
-summary(nhanes_model$person_time) # min 1 and max 63 years of FU
+summary(nhanes_model$person_time) # min 1 and max 17 years of FU
 
 # Covariate lists (so it's easy to update here only once if changed and automatically update all models downstream)
 cov_basic <- c(
@@ -189,12 +190,140 @@ cov_full <- c(
 
 ## Model 1: Poisson Model (Primary)
 
+<<<<<<< HEAD
+=======
+### Generating one row per follow-up year dataset for Poisson
+
+>>>>>>> b08662b83f5f5ed12092bb01fb3bc8aec4285182
 ```{r}
-#Example Poisson code
-#fit.pois1 <- glm(DEATH ~ AGEYRS + COVARIATES, data=nhanes, offset=OFFSET, family=poisson(link='log')) #specify COVARIATES and offset to run this model
-#summary(fit.pois1)
+nhanes_final_poisson <- nhanes_model |>
+  uncount(person_time, .id = "pt_year", .remove = FALSE) |>
+  mutate(
+    # generating individuals' age in year of follow up
+    age_in_year = AGEYRS + pt_year - 1,
+    # generating indicator var for death for one row per year of FU data
+    death_in_year = ifelse((event == 1 & pt_year == person_time), 1, 0),
+    log_pt = log(1)
+)
+
+# soundness check
+n_distinct(nhanes_final_poisson$SEQNO)
+# 8461 individuals
+
+# SOUNDNESS CHECK
+nhanes_final_poisson |>
+  filter(DEATH == 1) |>
+  summarise(
+    deaths_pre_split = n_distinct(SEQNO),
+    deaths_post_split = sum(death_in_year),
+    max_fu = max(age_tend - age_in_year)
+  )
 ```
 
+### Model 1.1 Unadjusted model
+
+```{r}
+fit.pois1 <- glm(death_in_year ~ # exposure 
+                   NIACIN + 
+                   # modelling age in interval
+                   ns(age_in_year, df = 4),
+                 data=nhanes_final_poisson, 
+                 offset=log_pt, 
+                 family=poisson(link='log'))
+summary(fit.pois1)
+tidy(fit.pois1, conf.int = TRUE,exponentiate = TRUE)
+```
+
+```{r}
+## Poisson Model 1.1 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov1 <- sandwich::vcovHC(fit.pois1, type = "HC3")
+tidy_model1 <- broom::tidy(fit.pois1, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results1 <- coeftest(fit.pois1, vcov = robust_vcov1)
+tidy_model1$std.error <- robust_results1[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson1 <- tidy_model1 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson1
+```
+
+### Model 1.2: Minimally adjusted model
+```{r}
+form.pois2 <- as.formula(
+  paste(
+    "death_in_year ~ NIACIN +",
+    paste(cov_basic, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois2 <- glm(form.pois2,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+summary(fit.pois2)
+```
+
+```{r}
+## Poisson Model 1.2 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov2 <- sandwich::vcovHC(fit.pois2, type = "HC3")
+tidy_model2 <- broom::tidy(fit.pois2, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results2 <- coeftest(fit.pois2, vcov = robust_vcov2)
+tidy_model2$std.error <- robust_results2[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson2 <- tidy_model2 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson2
+```
+
+### Model 1.3: Fully adjusted model
+
+```{r}
+form.pois3 <- as.formula(
+  paste(
+    "death_in_year ~ NIACIN +",
+    paste(cov_full, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois3 <- glm(form.pois3,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+summary(fit.pois3)
+exp(cbind(IRR=coef(fit.pois3),confint(fit.pois3)))
+```
+
+```{r}
+## Poisson Model 1.3 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov3 <- sandwich::vcovHC(fit.pois3, type = "HC3")
+tidy_model3 <- broom::tidy(fit.pois3, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results3 <- coeftest(fit.pois3, vcov = robust_vcov3)
+tidy_model3$std.error <- robust_results3[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson3 <- tidy_model3 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson3
+```
 ## Model 2: Cox PH Model (Sensitivity)
 
 ```{r}
