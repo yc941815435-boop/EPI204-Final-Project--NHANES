@@ -600,8 +600,10 @@ summary(test.cox)
 Describing relevant basic characteristics of study participants according to exposure categories of your choice
 
 ```{r}
-nhanes2<-nhanes %>% 
-  mutate(sex=factor(SEX, labels=c("male", "female"), levels=c(1,2)), 
+table.1<-nhanes_final_2 %>% 
+  arrange(niacin_q) %>% 
+  mutate(niacin_cat=factor(niacin_q,levels=c(1,2,3,4)),
+        sex=factor(SEX, labels=c("male", "female"), levels=c(1,2)), 
          age= AGEYRS,
          angina=factor(ANGINA, levels=c(0,1)),
          arthritis = factor(ARTHRITI, levels=c(0,1)),
@@ -624,18 +626,18 @@ nhanes2<-nhanes %>%
                                levels=c(1,2,3,4,5)),
          alcohol=as.numeric(BOOZE),
          recex=factor(RECEX, labels=c("High","Medium","Low"),levels=c(1,2,3)),
-         smoking=as.numeric(AVGSMK))
+         smoking=as.numeric(AVGSMK),
+         bmi=as.numeric(BMI))
 
-vars <- (c("sex", "age","angina","arthritis", 
-           "aspirin","ever_pregnant","hypertension",
-           "marital_status", "race", "urban",
-           "school", "alcohol", 
-           "recex", "smoking",
+vars <- (c("sex", "race", "age","angina","arthritis", 
+           "hypertension", "aspirin",
+           "marital_status", "urban",
+            "alcohol", "recex", "smoking",
            "bmi")) # include more covariates as needed
 
 # Table 1 needs complete case
 
-t1 <- CreateTableOne(vars = vars, data = nhanes2, strata = as.factor("niacin_q"))
+t1 <- CreateTableOne(vars = vars, data = table.1, strata = as.factor("niacin_q"))
 options(digits = 2)
 print(t1, showAllLevels = TRUE)
 ```
