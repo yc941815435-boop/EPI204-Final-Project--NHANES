@@ -40,6 +40,8 @@ nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
 ```
 
+## Selecting variables of interest
+
 ```{r}
 ## Select variables of interest
 
@@ -96,6 +98,7 @@ nhanes_final <- nhanes_analytic |>
 nrow(nhanes_final) #8,459 patients
 ```
 
+## Niacin Quartile Operationalization
 ```{r}
 # Summarize niacin
 summary(nhanes_final$NIACIN, useNA = "ifany")
@@ -118,6 +121,7 @@ nhanes_final <- nhanes_final |>
                                        ifelse(# AB: this part of the code was leaving out two participants exactly at the cutoff of p75; changed > to >= 
                                          nhanes_final$NIACIN >= niacin_qval$p75, 4, NA)))))
 
+nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
 # AB: Check with cut
 # qs <- quantile(nhanes_final$NIACIN,
 #                probs = seq(0, 1, 0.25),
@@ -140,6 +144,7 @@ nhanes_final <- nhanes_final |>
 #   select(-c(niacin_q_test))
 ```
 
+## BMI, person-time, sex
 ```{r}
 # Variable Operationalization
 # BMI, person-time
@@ -153,7 +158,9 @@ mutate(
   age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR - BORN_YR),
   person_time = age_tend - age_tstart,
   event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
-  BMI = WT/(HEIGHT/100)^2
+  BMI = WT/(HEIGHT/100)^2,
+  # 1 = female, 0 = male
+  SEX = if_else(SEX == 2, 1, 0)
 )
 
 nhanes_model <- nhanes_final_2 |>
@@ -164,6 +171,25 @@ nhanes_model <- nhanes_final_2 |>
 
 summary(nhanes_model$person_time) # min 1 and max 17 years of FU
 
+```
+
+## Class of variables
+
+```{r}
+nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
+nhanes_final$RACE <- as.factor(nhanes_final$RACE)
+nhanes_final$SEX <- as.factor(nhanes_final$SEX)
+nhanes_final$SCHOOL <- as.factor(nhanes_final$SCHOOL)
+nhanes_final$MARRY <- as.factor(nhanes_final$MARRY)
+nhanes_final$URBAN <- as.factor(nhanes_final$URBAN)
+nhanes_final$ANGINA <- as.factor(nhanes_final$ANGINA)
+nhanes_final$ARTHRITI <- as.factor(nhanes_final$ARTHRITI)
+nhanes_final$ASPIRIN <- as.factor(nhanes_final$ASPIRIN)
+nhanes_final$HTN_REP <- as.factor(nhanes_final$HTN_REP)
+nhanes_final$STROKE <- as.factor(nhanes_final$STROKE)
+```
+
+```{r}
 # Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
 cov_basic <- c(
   "SEX",
@@ -358,15 +384,27 @@ tidy_poisson4 <- tidy_model4 %>%
 tidy_poisson4
 ```
 
+```{r}
+poisson_emm_results <- data.frame(
+  coefs = robust_results4[c("NIACIN", "SEX", "NIACIN:SEX"), "Estimate"],
+  se = robust_results4[c("NIACIN", "SEX", "NIACIN:SEX"), "Std. Error"]
+)
+poisson_emm_results$variance <- poisson_emm_results$se^2
+
+hr.niacin1
+
+```
+
+
 ### Stratified Analysis
 
 #### Stratifying data
 ```{r}
 nhanes_final_poisson_male <- nhanes_final_poisson |>
-  filter(SEX == 1)
+  filter(SEX == 0)
 
 nhanes_final_poisson_female <- nhanes_final_poisson |>
-  filter(SEX == 2)
+  filter(SEX == 1)
 ```
 
 #### Full covariate set for stratified models
@@ -441,7 +479,7 @@ summary(fit.pois6)
 ```
 
 ```{r}
-## Poisson Model 1.4 Robust SEs
+## Poisson Model 1.6 Robust SEs
 # Get robust variance-covariance matrix
 robust_vcov6 <- sandwich::vcovHC(fit.pois6, type = "HC3")
 tidy_model6 <- broom::tidy(fit.pois6, conf.int = TRUE, conf.level = 0.95)
