@@ -248,7 +248,7 @@ nhanes_final_poisson |>
 
 ```{r}
 fit.pois1 <- glm(death_in_year ~ # exposure 
-                   NIACIN + 
+                   niacin_q + 
                    # modelling age in interval
                    ns(age_in_year, df = 4),
                  data=nhanes_final_poisson, 
@@ -281,7 +281,7 @@ tidy_poisson1
 ```{r}
 form.pois2 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_basic, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -317,7 +317,7 @@ tidy_poisson2
 ```{r}
 form.pois3 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_full, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -353,7 +353,7 @@ tidy_poisson3
 ```{r}
 form.pois4 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN + NIACIN*SEX +",
+    "death_in_year ~ niacin_q + niacin_q*SEX +",
     paste(cov_full, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -386,12 +386,11 @@ tidy_poisson4
 
 ```{r}
 poisson_emm_results <- data.frame(
-  coefs = robust_results4[c("NIACIN", "SEX", "NIACIN:SEX"), "Estimate"],
+  coefs = robust_results4[c("", "NIACIN", "SEX", "NIACIN:SEX"), "Estimate"],
   se = robust_results4[c("NIACIN", "SEX", "NIACIN:SEX"), "Std. Error"]
 )
 poisson_emm_results$variance <- poisson_emm_results$se^2
-
-hr.niacin1
+hr.male.var <- 
 
 ```
 
@@ -430,7 +429,7 @@ cov_full_stratified <- c(
 ```{r}
 form.pois5 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN + ",
+    "death_in_year ~ niacin_q + ",
     paste(cov_full_stratified, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -466,7 +465,7 @@ tidy_poisson5
 ```{r}
 form.pois6 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN + ",
+    "death_in_year ~ niacin_q + ",
     paste(cov_full_stratified, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -523,7 +522,7 @@ Model 1.3.3: spline term for age at follow up (model we have used for primary an
 ## Model 1.3.1
 form.pois1.3.1 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_full, collapse = " + "),
     "+ offset(log_pt)"
   )
@@ -536,7 +535,7 @@ fit.pois1.3.1 <- glm(form.pois1.3.1,
 ## Model 1.3.2
 form.pois1.3.2 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_full, collapse = " + "),
     "+ age_in_year + offset(log_pt)"
   )
@@ -549,7 +548,7 @@ fit.pois1.3.2 <- glm(form.pois1.3.2,
 ## Model 1.3.3 - restricted, cubic spline for age_in_year
 form.pois1.3.3 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_full, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
