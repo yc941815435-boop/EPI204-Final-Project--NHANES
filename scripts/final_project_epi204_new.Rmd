@@ -190,11 +190,8 @@ cov_full <- c(
 
 ## Model 1: Poisson Model (Primary)
 
-<<<<<<< HEAD
-=======
 ### Generating one row per follow-up year dataset for Poisson
 
->>>>>>> b08662b83f5f5ed12092bb01fb3bc8aec4285182
 ```{r}
 nhanes_final_poisson <- nhanes_model |>
   uncount(person_time, .id = "pt_year", .remove = FALSE) |>
