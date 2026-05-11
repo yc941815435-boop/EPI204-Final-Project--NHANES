@@ -164,7 +164,7 @@ nhanes_model <- nhanes_final_2 |>
 
 summary(nhanes_model$person_time) # min 1 and max 17 years of FU
 
-# Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
+# Covariate lists (so it's easy to update here only once if changed and automatically update all models downstream)
 cov_basic <- c(
   "SEX",
   "RACE",
@@ -454,6 +454,8 @@ test.cox <- coxph(
 )
 
 summary(test.cox)
+
+# AB: What is the interpretation for Cox with time adjustment?
 ```
 
 
