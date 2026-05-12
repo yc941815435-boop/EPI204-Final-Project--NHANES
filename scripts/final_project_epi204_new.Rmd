@@ -20,8 +20,8 @@ library(dplyr)
 library(survival)
 library(survminer)
 library(splines)
-
 knitr::opts_chunk$set(echo = TRUE)
+library(lmtest)
 ```
 
 ```{r}
@@ -36,6 +36,8 @@ nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 ### Confirm one row per person
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
 ```
+
+## Selecting variables of interest
 
 ```{r}
 ## Select variables of interest
@@ -97,6 +99,7 @@ nhanes_final <- nhanes_analytic |>
 nrow(nhanes_final) #8,490 patients
 ```
 
+## Niacin Quartile Operationalization
 ```{r}
 # Summarize niacin
 summary(nhanes_final$NIACIN, useNA = "ifany")
@@ -124,6 +127,7 @@ nhanes_final <- nhanes_final |>
                                        ifelse(# AB: this part of the code was leaving out two participants exactly at the cutoff of p75; changed > to >= 
                                          nhanes_final$NIACIN >= niacin_qval$p75, 4, NA)))))
 
+nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
 # AB: Check with cut
 # qs <- quantile(nhanes_final$NIACIN,
 #                probs = seq(0, 1, 0.25),
@@ -146,6 +150,7 @@ nhanes_final <- nhanes_final |>
 #   select(-c(niacin_q_test))
 ```
 
+## BMI, person-time, sex
 ```{r}
 # Variable Operationalization
 # BMI, person-time
@@ -159,7 +164,9 @@ mutate(
   age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR - BORN_YR),
   person_time = age_tend - age_tstart,
   event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
-  BMI = WT/(HEIGHT/100)^2
+  BMI = WT/(HEIGHT/100)^2,
+  # 1 = female, 0 = male
+  SEX = if_else(SEX == 2, 1, 0)
 )
 
 nhanes_model <- nhanes_final_2 |>
@@ -170,7 +177,26 @@ nhanes_model <- nhanes_final_2 |>
 
 summary(nhanes_model$person_time) # min 1 and max 17 years of FU
 
-# Covariate lists (so it's easy to update here only once if changed and automatically update all models downstream)
+```
+
+## Class of variables
+
+```{r}
+nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
+nhanes_final$RACE <- as.factor(nhanes_final$RACE)
+nhanes_final$SEX <- as.factor(nhanes_final$SEX)
+nhanes_final$SCHOOL <- as.factor(nhanes_final$SCHOOL)
+nhanes_final$MARRY <- as.factor(nhanes_final$MARRY)
+nhanes_final$URBAN <- as.factor(nhanes_final$URBAN)
+nhanes_final$ANGINA <- as.factor(nhanes_final$ANGINA)
+nhanes_final$ARTHRITI <- as.factor(nhanes_final$ARTHRITI)
+nhanes_final$ASPIRIN <- as.factor(nhanes_final$ASPIRIN)
+nhanes_final$HTN_REP <- as.factor(nhanes_final$HTN_REP)
+nhanes_final$STROKE <- as.factor(nhanes_final$STROKE)
+```
+
+```{r}
+# Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
 cov_basic <- c(
   "SEX",
   "RACE",
@@ -228,7 +254,7 @@ nhanes_final_poisson |>
 
 ```{r}
 fit.pois1 <- glm(death_in_year ~ # exposure 
-                   NIACIN + 
+                   niacin_q + 
                    # modelling age in interval
                    ns(age_in_year, df = 4),
                  data=nhanes_final_poisson, 
@@ -261,7 +287,7 @@ tidy_poisson1
 ```{r}
 form.pois2 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_basic, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -297,7 +323,7 @@ tidy_poisson2
 ```{r}
 form.pois3 <- as.formula(
   paste(
-    "death_in_year ~ NIACIN +",
+    "death_in_year ~ niacin_q +",
     paste(cov_full, collapse = " + "),
     "+ ns(age_in_year, df = 4) + offset(log_pt)"
   )
@@ -307,7 +333,6 @@ fit.pois3 <- glm(form.pois3,
                  data=nhanes_final_poisson, 
                  family=poisson(link='log'))
 summary(fit.pois3)
-exp(cbind(IRR=coef(fit.pois3),confint(fit.pois3)))
 ```
 
 ```{r}
@@ -327,6 +352,284 @@ tidy_poisson3 <- tidy_model3 %>%
     RR_high = exp(estimate + 1.96 * std.error)
   )
 tidy_poisson3
+```
+
+### Model 1.4: Fully adjusted model + EMM by Sex
+
+```{r}
+form.pois4 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q + niacin_q*SEX +",
+    paste(cov_full, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois4 <- glm(form.pois4,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+summary(fit.pois4)
+```
+
+```{r}
+## Poisson Model 1.4 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov4 <- sandwich::vcovHC(fit.pois4, type = "HC3")
+tidy_model4 <- broom::tidy(fit.pois4, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results4 <- coeftest(fit.pois4, vcov = robust_vcov4)
+tidy_model4$std.error <- robust_results4[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson4 <- tidy_model4 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson4
+```
+
+```{r}
+poisson_emm_results <- data.frame(
+  coefs = robust_results4[c("niacin_q2", "niacin_q3", "niacin_q4", "SEX", "niacin_q2:SEX", "niacin_q3:SEX", "niacin_q4:SEX"), "Estimate"],
+  se = robust_results4[c("niacin_q2", "niacin_q3", "niacin_q4", "SEX", "niacin_q2:SEX", "niacin_q3:SEX", "niacin_q4:SEX"), "Std. Error"]
+)
+poisson_emm_results$variance <- (poisson_emm_results$se)^2 
+v <- robust_vcov4
+
+```
+
+## Table 3: HRs for FEMALES (SEX == 1)
+
+```{r}
+female.hr <- data.frame(
+  niacin_q = c("niacin_q2", "niacin_q3", "niacin_q4"),
+  variance = c(
+    v["niacin_q2", "niacin_q2"] + v["niacin_q2:SEX", "niacin_q2:SEX"] + 2*v["niacin_q2", "niacin_q2:SEX"],
+    v["niacin_q3", "niacin_q3"] + v["niacin_q3:SEX", "niacin_q3:SEX"] + 2*v["niacin_q3", "niacin_q3:SEX"],
+    v["niacin_q4", "niacin_q4"] + v["niacin_q4:SEX", "niacin_q4:SEX"] + 2*v["niacin_q4", "niacin_q4:SEX"]),
+  coef = c(
+    robust_results4[c("niacin_q2"), "Estimate"] + robust_results4[c("niacin_q2:SEX"), "Estimate"],
+    robust_results4[c("niacin_q3"), "Estimate"] + robust_results4[c("niacin_q3:SEX"), "Estimate"],
+    robust_results4[c("niacin_q4"), "Estimate"] + robust_results4[c("niacin_q4:SEX"), "Estimate"]),
+    sex = c("female", "female", "female")
+)
+
+female.hr <- female.hr |>
+  mutate(
+    hr = exp(coef),
+    lcl = exp(coef - (qnorm(0.975)*sqrt(variance))),
+    ucl = exp(coef + (qnorm(0.975)*sqrt(variance)))
+  )
+```
+
+## Table 3: HRs for MALEs (SEX == 0)
+
+```{r}
+male.hr <- data.frame(
+  niacin_q = c("niacin_q2", "niacin_q3", "niacin_q4"),
+  variance = c(
+    v["niacin_q2", "niacin_q2"],
+    v["niacin_q3", "niacin_q3"],
+    v["niacin_q4", "niacin_q4"]),
+  coef = c(
+    robust_results4[c("niacin_q2"), "Estimate"],
+    robust_results4[c("niacin_q3"), "Estimate"],
+    robust_results4[c("niacin_q4"), "Estimate"]),
+  sex = c("male", "male", "male")
+)
+
+male.hr <- male.hr |>
+  mutate(
+    hr = exp(coef),
+    lcl = exp(coef - (qnorm(0.975)*sqrt(variance))),
+    ucl = exp(coef + (qnorm(0.975)*sqrt(variance)))
+  )
+```
+
+```{r}
+hr.emm.sex <- rbind(female.hr, male.hr)
+```
+
+### Stratified Analysis
+
+#### Stratifying data
+```{r}
+nhanes_final_poisson_male <- nhanes_final_poisson |>
+  filter(SEX == 0)
+
+table(nhanes_final_poisson_male$niacin_q)
+
+nhanes_final_poisson_female <- nhanes_final_poisson |>
+  filter(SEX == 1)
+table(nhanes_final_poisson_female$niacin_q)
+```
+
+#### Full covariate set for stratified models
+```{r}
+cov_full_stratified <- c(
+  "RACE",
+  "SCHOOL",
+  "MARRY",
+  "URBAN",
+  "BOOZE",
+  "AVGSMK",
+  "BMI",
+  "ANGINA",
+  "ARTHRITI",
+  "ASPIRIN",
+  "HTN_REP",
+  "STROKE"
+)
+```
+
+### Model 1.5: Fully-adjusted model stratified by sex - male
+
+```{r}
+form.pois5 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q + ",
+    paste(cov_full_stratified, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois5 <- glm(form.pois5,
+                 data=nhanes_final_poisson_male, 
+                 family=poisson(link='log'))
+summary(fit.pois5)
+```
+
+```{r}
+## Poisson Model 1.5 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov5 <- sandwich::vcovHC(fit.pois5, type = "HC3")
+tidy_model5 <- broom::tidy(fit.pois5, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results5 <- coeftest(fit.pois5, vcov = robust_vcov5)
+tidy_model5$std.error <- robust_results5[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson5 <- tidy_model5 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson5
+```
+
+### Model 1.6: Fully-adjusted model stratified by sex - female
+
+```{r}
+form.pois6 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q + ",
+    paste(cov_full_stratified, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois6 <- glm(form.pois6,
+                 data=nhanes_final_poisson_female, 
+                 family=poisson(link='log'))
+summary(fit.pois6)
+```
+
+```{r}
+## Poisson Model 1.6 Robust SEs
+# Get robust variance-covariance matrix
+robust_vcov6 <- sandwich::vcovHC(fit.pois6, type = "HC3")
+tidy_model6 <- broom::tidy(fit.pois6, conf.int = TRUE, conf.level = 0.95)
+
+# Replace standard errors with robust ones
+robust_results6 <- coeftest(fit.pois6, vcov = robust_vcov6)
+tidy_model6$std.error <- robust_results6[, "Std. Error"]
+# Calculate RR (95% CI) with robust standard errors
+tidy_poisson6 <- tidy_model6 %>%
+  mutate(
+    RR = exp(estimate),
+    RR_low = exp(estimate - 1.96 * std.error),
+    RR_high = exp(estimate + 1.96 * std.error)
+  )
+tidy_poisson6
+```
+
+#### Exporting results
+
+```{r}
+write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
+write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
+write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
+write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
+write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
+write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
+write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
+```
+
+### Non-linearity Check:
+
+In this check for non-linearity, we already decided to use a restricted spline model. 
+
+Model 1.3.1: no term for age at follow-up
+Model 1.3.2: linear term for age at follow up 
+Model 1.3.3: spline term for age at follow up (model we have used for primary analysis)
+
+* Note: Model 1.3.3 = Model 1.3 
+
+#### Specifying models
+```{r}
+## Model 1.3.1
+form.pois1.3.1 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q +",
+    paste(cov_full, collapse = " + "),
+    "+ offset(log_pt)"
+  )
+)
+
+fit.pois1.3.1 <- glm(form.pois1.3.1,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+
+## Model 1.3.2
+form.pois1.3.2 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q +",
+    paste(cov_full, collapse = " + "),
+    "+ age_in_year + offset(log_pt)"
+  )
+)
+
+fit.pois1.3.2 <- glm(form.pois1.3.2,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+
+## Model 1.3.3 - restricted, cubic spline for age_in_year
+form.pois1.3.3 <- as.formula(
+  paste(
+    "death_in_year ~ niacin_q +",
+    paste(cov_full, collapse = " + "),
+    "+ ns(age_in_year, df = 4) + offset(log_pt)"
+  )
+)
+
+fit.pois1.3.3 <- glm(form.pois1.3.3,
+                 data=nhanes_final_poisson, 
+                 family=poisson(link='log'))
+```
+
+### LRTests
+```{r}
+# LRT #1: Compare 1.3.1 [null] to 1.3.2 [alternative]
+lrtest(fit.pois1.3.1, fit.pois1.3.2)
+
+# LRT #2: Compare 1.3.1 [null] to 1.3.3 [alternative]
+lrtest(fit.pois1.3.1, fit.pois1.3.3)
+
+# LRT #3: Compare 1.3.2 [null] to 1.3.3 [alternative]
+lrtest(fit.pois1.3.2, fit.pois1.3.3)
 ```
 ## Model 2: Cox PH Model (Sensitivity)
 
@@ -374,22 +677,20 @@ check.pha<-cox.zph(fit.cox.full.adj)
 ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
 ```
 ```{r}
-# test.cox <- coxph(
-#  as.formula(
-#   paste(
-#     "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
-#     paste(cov_full, collapse = " + ")
-#   )),
-#     
-#   tt = function(x, t, ...) x * log(t),
-#   
-#   data = nhanes_model,
-#   ties = "efron"
-# )
-# 
-# summary(test.cox)
+test.cox <- coxph(
+ as.formula(
+  paste(
+    "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
+    paste(cov_full, collapse = " + ")
+  )),
+    
+  tt = function(x, t, ...) x * log(t),
+  
+  data = nhanes_model,
+  ties = "efron"
+)
 
-# AB: What is the interpretation for Cox with time adjustment?
+summary(test.cox)
 ```
 
 
@@ -397,8 +698,10 @@ ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
 Describing relevant basic characteristics of study participants according to exposure categories of your choice
 
 ```{r}
-nhanes2<-nhanes %>% 
-  mutate(sex=factor(SEX, labels=c("male", "female"), levels=c(1,2)), 
+table.1<-nhanes_final_2 %>% 
+  arrange(niacin_q) %>% 
+  mutate(niacin_cat=factor(niacin_q,levels=c(1,2,3,4)),
+        sex=factor(SEX, labels=c("male", "female"), levels=c(1,2)), 
          age= AGEYRS,
          angina=factor(ANGINA, levels=c(0,1)),
          arthritis = factor(ARTHRITI, levels=c(0,1)),
@@ -421,18 +724,18 @@ nhanes2<-nhanes %>%
                                levels=c(1,2,3,4,5)),
          alcohol=as.numeric(BOOZE),
          recex=factor(RECEX, labels=c("High","Medium","Low"),levels=c(1,2,3)),
-         smoking=as.numeric(AVGSMK))
+         smoking=as.numeric(AVGSMK),
+         bmi=as.numeric(BMI))
 
-vars <- (c("sex", "age","angina","arthritis", 
-           "aspirin","ever_pregnant","hypertension",
-           "marital_status", "race", "urban",
-           "school", "alcohol", 
-           "recex", "smoking",
+vars <- (c("sex", "race", "age","angina","arthritis", 
+           "hypertension", "aspirin",
+           "marital_status", "urban",
+            "alcohol", "recex", "smoking",
            "bmi")) # include more covariates as needed
 
 # Table 1 needs complete case
 
-t1 <- CreateTableOne(vars = vars, data = nhanes2, strata = as.factor("niacin_q"))
+t1 <- CreateTableOne(vars = vars, data = table.1, strata = as.factor("niacin_q"))
 options(digits = 2)
 print(t1, showAllLevels = TRUE)
 ```
