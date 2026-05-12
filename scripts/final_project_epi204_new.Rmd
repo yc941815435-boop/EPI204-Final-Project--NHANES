@@ -4,10 +4,6 @@ output: html_document
 date: "2026-04-30"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ## Data Processing
 
 ```{r setup, include = FALSE}
@@ -24,6 +20,8 @@ library(dplyr)
 library(survival)
 library(survminer)
 library(splines)
+
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
@@ -59,6 +57,10 @@ nhanes_analytic <- nhanes |>
       BOOZE, RECEX, AVGSMK, HEIGHT, WT)
   )
 
+# check <- nhanes_analytic |>
+#   select(c(SEQNO, AGEYRS, AGEDIE, LAST_YR, BORN_YR)) |> 
+#   mutate(birth_year_full = 1900 + BORN_YR)
+
 ### Review covariate missingness
 library(naniar)
 gg_miss_var(nhanes_analytic)
@@ -92,12 +94,17 @@ nhanes_final <- nhanes_analytic |>
          !is.na(SCHOOL),
          !is.na(ARTHRITI)) 
 
-nrow(nhanes_final) #8,459 patients
+nrow(nhanes_final) #8,490 patients
 ```
 
 ```{r}
 # Summarize niacin
 summary(nhanes_final$NIACIN, useNA = "ifany")
+
+# Plot distribution exposure
+ggplot(nhanes_final,
+       aes(x = NIACIN)) + 
+  geom_histogram()
 
 # Create niacin quartiles
 niacin_qval <- nhanes_final %>%
@@ -364,23 +371,23 @@ summary(fit.cox.full.adj)
 ```{r}
 #checking Schoenfeld Residuals
 check.pha<-cox.zph(fit.cox.full.adj)
-ggcoxzph(check.pha[1]) #AB: niacin_q seems to be violating the PH assumption; could we do interaction with time?
+ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
 ```
 ```{r}
-test.cox <- coxph(
- as.formula(
-  paste(
-    "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
-    paste(cov_full, collapse = " + ")
-  )),
-    
-  tt = function(x, t, ...) x * log(t),
-  
-  data = nhanes_model,
-  ties = "efron"
-)
-
-summary(test.cox)
+# test.cox <- coxph(
+#  as.formula(
+#   paste(
+#     "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
+#     paste(cov_full, collapse = " + ")
+#   )),
+#     
+#   tt = function(x, t, ...) x * log(t),
+#   
+#   data = nhanes_model,
+#   ties = "efron"
+# )
+# 
+# summary(test.cox)
 
 # AB: What is the interpretation for Cox with time adjustment?
 ```
@@ -449,6 +456,39 @@ Give the multivariable-adjusted results in each category of the effect modifier 
 ```
 
 
+## Appendix (for fun): forest plot
+
+```{r}
+forest_df <- bind_rows(
+  tidy_poisson1 %>% mutate(model = "Model 1"),
+  tidy_poisson2 %>% mutate(model = "Model 2"),
+  tidy_poisson3 %>% mutate(model = "Model 3")
+) %>%
+  filter(term == "NIACIN")
+
+ggplot(forest_df,
+       aes(x = RR,
+           y = model,
+           xmin = RR_low,
+           xmax = RR_high)) +
+  
+  geom_point(size = 3) +
+  
+  geom_errorbarh(height = 0.2) +
+  
+  geom_vline(xintercept = 1,
+             linetype = "dashed") +
+  
+  scale_x_log10() +
+  
+  labs(
+    x = "Rate Ratio (95% CI)",
+    y = "",
+    title = "Association Between Niacin and Mortality"
+  ) +
+  
+  theme_bw()
+```
 
 
 
