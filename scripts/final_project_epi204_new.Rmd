@@ -66,17 +66,33 @@ nhanes_analytic <- nhanes |>
 ### Review covariate missingness
 library(naniar)
 gg_miss_var(nhanes_analytic)
-miss_var_summary(nhanes_analytic)
-
-# Checking something funky going on with time variables
-# table(!is.na(nhanes_analytic$BORN_YR))
-# table(!is.na(nhanes_analytic$LAST_YR))
-
-# check <- nhanes_analytic |>
-#   filter(is.na(BORN_YR),
-#          is.na(LAST_YR))
 
 # AB: AGEDIE, DIE_YR are not well populated (~80% missing) though DEATH outcome is not that bad (~17.8% missing); just checked and it's because AGEDIE and DIE_YR are listed NA for those who have DEATH = 1; let's keep even with missing - these are not covars
+
+nhanes_analytic_missingness <- nhanes_analytic |>
+  select(
+    NIACIN,
+    ANGINA,
+    STROKE,
+    HTN_REP,
+    LAST_YR,
+    BORN_YR,
+    DEATH,
+    URBAN,
+    SCHOOL,
+    ARTHRITI
+    )
+
+# Exporting table of missingness proportions for vars of interest
+miss_var_summary(nhanes_analytic)
+nhanes_analytic_missingness_table <- miss_var_summary(nhanes_analytic_missingness) |>
+  as.data.frame() |>
+  mutate(
+    n_miss = as.numeric(n_miss),
+    pct_miss = as.numeric(pct_miss)
+  )
+
+write.csv(nhanes_analytic_missingness_table, "nhanes_missing.csv", row.names = FALSE)
 
 table(nhanes$AGEDIE, nhanes$DEATH, useNA = "ifany") # AB: no data for those 2,008 we're excluding. those with NA for AGEDIE are coded as 0 for DEATH
 
@@ -250,7 +266,7 @@ nhanes_final_poisson |>
   )
 ```
 
-### Model 1.1 Unadjusted model
+### Model 1.1 Age-adjusted model
 
 ```{r}
 fit.pois1 <- glm(death_in_year ~ # exposure 
@@ -559,6 +575,11 @@ tidy_poisson6
 #### Exporting results
 
 ```{r}
+# deaths per NQ
+nhanes_deaths_niacin_q <- table(nhanes_final_poisson$death_in_year, nhanes_final_poisson$niacin_q)
+nhanes_deaths_niacin_q
+
+# Export CSVs
 write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
 write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
 write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
@@ -633,16 +654,31 @@ lrtest(fit.pois1.3.2, fit.pois1.3.3)
 ```
 ## Model 2: Cox PH Model (Sensitivity)
 
+### Age-adjusted
 ```{r}
-# Unadjusted model
+# Age adjusted model
 fit.cox.unadj <- coxph(
   Surv(age_tstart, age_tend, event) ~ niacin_q,
   data = nhanes_model,
   ties = 'efron'
 )
 summary(fit.cox.unadj)
+
+cox.age <- tidy(
+  fit.cox.unadj,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  rename(
+    HR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    p_value = p.value
+  )
 ```
 
+### Minimally adjusted 
 ```{r}
 # Minimally adjusted model
 fit.cox.min.adj <- coxph(
@@ -655,7 +691,22 @@ fit.cox.min.adj <- coxph(
   ties = 'efron'
 )
 summary(fit.cox.min.adj)
+
+cox.minimal <- tidy(
+  fit.cox.min.adj,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  rename(
+    HR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    p_value = p.value
+  )
 ```
+
+### Fully-adjusted 
 
 ```{r}
 # Fully adjusted model
@@ -669,6 +720,25 @@ fit.cox.full.adj <- coxph(
   ties = 'efron'
 )
 summary(fit.cox.full.adj)
+
+cox.full <- tidy(
+  fit.cox.full.adj,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  rename(
+    HR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    p_value = p.value
+  )
+```
+
+```{r}
+write_csv(cox.age, "cox_ageadj_results.csv")
+write_csv(cox.minimal, "cox_minimal_results.csv")
+write_csv(cox.full, "cox_full_results.csv")
 ```
 
 ```{r}
@@ -677,20 +747,51 @@ check.pha<-cox.zph(fit.cox.full.adj)
 ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
 ```
 ```{r}
-test.cox <- coxph(
- as.formula(
-  paste(
-    "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
-    paste(cov_full, collapse = " + ")
-  )),
+
+# DRAFT
+# test.cox <- coxph(
+# as.formula(
+#  paste(
+#    "Surv(age_tstart, age_tend, event) ~ niacin_q + tt(niacin_q) +",
+#    paste(cov_full, collapse = " + ")
+#  )),
     
-  tt = function(x, t, ...) x * log(t),
+#  tt = function(x, t, ...) x * log(t),
   
+#  data = nhanes_model,
+#  ties = "efron"
+#)
+
+#summary(test.cox)
+
+form.test.cox <- as.formula(
+  paste(
+    "Surv(age_tstart, age_tend, event) ~ niacin_q +",
+    paste(cov_full, collapse = " + ")
+  )
+)
+
+test.cox <- coxph(
+  form.test.cox,
   data = nhanes_model,
   ties = "efron"
 )
 
-summary(test.cox)
+cox.test <- cox.zph(test.cox)
+plot_names <- rownames(cox.test$table)
+plot_names <- plot_names[plot_names != "GLOBAL"]
+
+pdf("schoenfeld_plots.pdf", width = 10, height = 16)
+
+par(mfrow = c(7, 2), mar = c(3, 3, 2, 1))
+
+for (i in seq_along(plot_names)) {
+  plot(cox.test, var = i, main = plot_names[i])
+}
+
+dev.off()
+
+par(mfrow = c(1, 1))
 ```
 
 
@@ -740,25 +841,6 @@ t1 <- CreateTableOne(vars = vars, data = table.1, strata = as.factor("niacin_q")
 options(digits = 2)
 print(t1, showAllLevels = TRUE)
 ```
-
-
-## Table 2
-Present the age-adjusted and multivariable-adjusted results of the association generated from both of your models
-
-```{r}
-
-
-```
-
-
-
-## Table 3
-Give the multivariable-adjusted results in each category of the effect modifier (sex), and p-values for interaction (using the primary model of your choice only)
-
-```{r}
-
-```
-
 
 ## Appendix (for fun): forest plot
 
