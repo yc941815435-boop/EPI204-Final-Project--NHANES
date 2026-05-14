@@ -261,7 +261,7 @@ fit.pois1 <- glm(death_in_year ~ # exposure
                  offset=log_pt, 
                  family=poisson(link='log'))
 summary(fit.pois1)
-tidy(fit.pois1, conf.int = TRUE,exponentiate = TRUE)
+tidy(fit.pois1, conf.int = TRUE, exponentiate = TRUE)
 ```
 
 ```{r}
