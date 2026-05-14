@@ -729,6 +729,7 @@ table.1<-nhanes_final_2 %>%
 
 vars <- (c("sex", "race", "age","angina","arthritis", 
            "hypertension", "aspirin",
+           "school",
            "marital_status", "urban",
             "alcohol", "recex", "smoking",
            "bmi")) # include more covariates as needed
