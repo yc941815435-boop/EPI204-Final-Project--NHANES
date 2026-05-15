@@ -85,7 +85,7 @@ nhanes_analytic_missingness_table <- miss_var_summary(nhanes_analytic_missingnes
     pct_miss = as.numeric(pct_miss)
   )
 
-write.csv(nhanes_analytic_missingness_table, "nhanes_missing.csv", row.names = FALSE)
+# write.csv(nhanes_analytic_missingness_table, "nhanes_missing.csv", row.names = FALSE)
 
 table(nhanes$AGEDIE, nhanes$DEATH, useNA = "ifany") # AB: no data for those 2,008 we're excluding. those with NA for AGEDIE are coded as 0 for DEATH
 
@@ -138,6 +138,8 @@ nhanes_final <- nhanes_final |>
                                          nhanes_final$NIACIN >= niacin_qval$p75, 4, NA)))))
 
 nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
+
+table(nhanes_final$niacin_q)
 ```
 
 ## BMI, person-time, sex
@@ -250,10 +252,7 @@ fit.pois1 <- glm(death_in_year ~ # exposure
                  offset=log_pt, 
                  family=poisson(link='log'))
 summary(fit.pois1)
-<<<<<<< HEAD
 tidy(fit.pois1, conf.int = TRUE, exponentiate = TRUE)
-=======
->>>>>>> 485babf743f0c0298d06f8649c891048b699950d
 ```
 
 ```{r}
@@ -552,13 +551,13 @@ nhanes_deaths_niacin_q <- table(nhanes_final_poisson$death_in_year, nhanes_final
 nhanes_deaths_niacin_q
 
 # Export CSVs
-write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
-write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
-write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
-write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
-write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
-write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
-write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
+# write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
 ```
 
 ### Non-linearity in baseline hazard:
@@ -751,9 +750,9 @@ cox.full <- tidy(
 
 ### Exporting Cox PH Results
 ```{r}
-write_csv(cox.age, "cox_ageadj_results.csv")
-write_csv(cox.minimal, "cox_minimal_results.csv")
-write_csv(cox.full, "cox_full_results.csv")
+# write_csv(cox.age, "cox_ageadj_results.csv")
+# write_csv(cox.minimal, "cox_minimal_results.csv")
+# write_csv(cox.full, "cox_full_results.csv")
 ```
 
 ### Schoenfeld Residuals Check
@@ -843,40 +842,6 @@ vars <- (c("sex", "race", "age","angina","arthritis",
 t1 <- CreateTableOne(vars = vars, data = table.1, strata = as.factor("niacin_q"))
 options(digits = 2)
 print(t1, showAllLevels = TRUE)
-```
-
-## Appendix (for fun): forest plot
-
-```{r, eval = FALSE}
-forest_df <- bind_rows(
-  tidy_poisson1 %>% mutate(model = "Model 1"),
-  tidy_poisson2 %>% mutate(model = "Model 2"),
-  tidy_poisson3 %>% mutate(model = "Model 3")
-) %>%
-  filter(term %in% c("niacin_q2", "niacin_q3", "niacin_q4")) %>%
-  mutate(term = recode(term,
-    "niacin_q2" = "Q2 vs Q1",
-    "niacin_q3" = "Q3 vs Q1",
-    "niacin_q4" = "Q4 vs Q1"
-  ))
-
-
-ggplot(forest_df,
-       aes(x = RR,
-           y = model,
-           xmin = RR_low,
-           xmax = RR_high,
-           color = model)) +
-  geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_errorbarh(position = position_dodge(width = 0.5), height = 0.2) +
-  geom_vline(xintercept = 1, linetype = "dashed") +
-  scale_x_log10() +
-  labs(
-    x = "Hazard Ratio (95% CI)",
-    y = "Model",
-    title = "Association Between Niacin Quartile and Mortality"
-  ) +
-  theme_bw()
 ```
 
 
