@@ -1,13 +1,11 @@
 ---
-title: "EPI 204: Final Project"
+title: "EPI 204: Final Project Code Appendix"
 author: "Andra Boca, Parker Tope, Yvonne Chen, Billy Huang, Camryn Dixon"
 output: html_document
 date: "2026-04-30"
 ---
 
-## Data Processing
-
-```{r setup, include = FALSE}
+```{r setup, include=FALSE}
 # # Clear environment 
 rm(list = ls())
 
@@ -25,16 +23,14 @@ knitr::opts_chunk$set(echo = TRUE)
 library(lmtest)
 ```
 
-```{r, results = FALSE}
+```{r, include=FALSE}
 DirPath <- getwd()
 nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 ### Confirm one row per person
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
 ```
 
-## Selecting variables of interest
-
-```{r}
+```{r, include=FALSE}
 ## Select variables of interest
 nhanes_analytic <- nhanes |>
   select(
@@ -54,8 +50,7 @@ nhanes_analytic <- nhanes |>
   )
 ```
 
-## Missingness of variables
-```{r}
+```{r, include=FALSE}
 ### Review covariate missingness
 library(naniar)
 gg_miss_var(nhanes_analytic)
@@ -108,9 +103,7 @@ nhanes_final <- nhanes_analytic |>
 nrow(nhanes_final) #8,490 patients
 ```
 
-## Niacin Quartile Operationalization
-
-```{r}
+```{r, include=FALSE}
 # Summarize niacin
 summary(nhanes_final$NIACIN, useNA = "ifany")
 
@@ -140,9 +133,7 @@ nhanes_final <- nhanes_final |>
 nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
 ```
 
-## BMI, person-time, sex
-
-```{r}
+```{r, include=FALSE}
 # Variable Operationalization
 # BMI, person-time
 nhanes_final_2 <- nhanes_final |>
@@ -170,9 +161,7 @@ summary(nhanes_model$person_time) # PRT: min 1 and max 17 years of FU
 
 ```
 
-## Class of variables
-
-```{r}
+```{r, include=FALSE}
 nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
 nhanes_final$RACE <- as.factor(nhanes_final$RACE)
 nhanes_final$SEX <- as.factor(nhanes_final$SEX)
@@ -186,6 +175,7 @@ nhanes_final$HTN_REP <- as.factor(nhanes_final$HTN_REP)
 nhanes_final$STROKE <- as.factor(nhanes_final$STROKE)
 ```
 
+### Covariate List
 ```{r}
 # Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
 cov_basic <- c(
@@ -213,8 +203,8 @@ cov_full <- c(
 
 ## Primary Analysis: Poisson Model
 
-### Generating one row per follow-up person-year dataset for Poisson
-```{r, results = FALSE}
+### Generating person-year dataset
+```{r, include=FALSE}
 nhanes_final_poisson <- nhanes_model |>
   uncount(person_time, .id = "pt_year", .remove = FALSE) |>
   mutate(
@@ -224,11 +214,9 @@ nhanes_final_poisson <- nhanes_model |>
     death_in_year = ifelse((event == 1 & pt_year == person_time), 1, 0),
     log_pt = log(1)
 )
+```
 
-# soundness check
-n_distinct(nhanes_final_poisson$SEQNO)
-# 8461 individuals
-
+```{r, include=FALSE}
 # SOUNDNESS CHECK
 nhanes_final_poisson |>
   filter(DEATH == 1) |>
@@ -250,10 +238,6 @@ fit.pois1 <- glm(death_in_year ~ # exposure
                  offset=log_pt, 
                  family=poisson(link='log'))
 summary(fit.pois1)
-<<<<<<< HEAD
-tidy(fit.pois1, conf.int = TRUE, exponentiate = TRUE)
-=======
->>>>>>> 485babf743f0c0298d06f8649c891048b699950d
 ```
 
 ```{r}
@@ -437,8 +421,7 @@ male.hr <- male.hr |>
   )
 ```
 
-### Combining sex-specific HRs into table
-```{r}
+```{r, include=FALSE}
 hr.emm.sex <- rbind(female.hr, male.hr)
 ```
 
@@ -546,8 +529,7 @@ tidy_poisson6 <- tidy_model6 %>%
 tidy_poisson6
 ```
 
-#### Exporting results
-```{r}
+```{r, include=FALSE}
 # deaths per NQ
 nhanes_deaths_niacin_q <- table(nhanes_final_poisson$death_in_year, nhanes_final_poisson$niacin_q)
 nhanes_deaths_niacin_q
@@ -562,18 +544,7 @@ write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
 write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
 ```
 
-### Non-linearity in baseline hazard:
-
-In this check for non-linearity, we already decided to use a restricted spline model. 
-
-Model 1.3.1: no term for age at follow-up
-Model 1.3.2: linear term for age at follow up 
-Model 1.3.3: spline term for age at follow up (model we have used for primary analysis)
-
-* Note: Model 1.3.3 = Model 1.3 
-
-#### Specifying models
-```{r}
+```{r, include=FALSE}
 ## Model 1.3.1
 form.pois1.3.1 <- as.formula(
   paste(
@@ -614,8 +585,7 @@ fit.pois1.3.3 <- glm(form.pois1.3.3,
                  family=poisson(link='log'))
 ```
 
-#### LRTests
-```{r}
+```{r, include=FALSE}
 # LRT #1: Compare 1.3.1 [null] to 1.3.2 [alternative]
 lrtest(fit.pois1.3.1, fit.pois1.3.2)
 
@@ -626,15 +596,7 @@ lrtest(fit.pois1.3.1, fit.pois1.3.3)
 lrtest(fit.pois1.3.2, fit.pois1.3.3)
 ```
 
-### Non-linearity in NIACIN:
-
-In this check for non-linearity, we already decided to use a restricted spline model. 
-
-Model 1.3.4: linear term for niacin
-Model 1.3.5: spline term for age at follow up (model we have used for primary analysis)
-
-#### Specifying models
-```{r}
+```{r, include=FALSE}
 ## Model 1.3.4
 form.pois1.3.4 <- as.formula(
   paste(
@@ -662,16 +624,12 @@ fit.pois1.3.5 <- glm(form.pois1.3.5,
                  family=poisson(link='log'))
 ```
 
-#### LRTests
-```{r}
+```{r, include=FALSE}
 # LRT #4: Compare 1.3.4 [null] to 1.3.5 [alternative]
 lrtest(fit.pois1.3.4, fit.pois1.3.5)
 ```
 
-## Sensitivity Analysis: Cox PH Model
-
-### Age-adjusted
-```{r}
+```{r, include=FALSE}
 # Age adjusted model
 fit.cox.unadj <- coxph(
   Surv(age_tstart, age_tend, event) ~ niacin_q,
@@ -694,8 +652,7 @@ cox.age <- tidy(
   )
 ```
 
-### Minimally adjusted 
-```{r}
+```{r, include=FALSE}
 # Minimally adjusted model
 fit.cox.min.adj <- coxph(
   as.formula(
@@ -722,8 +679,7 @@ cox.minimal <- tidy(
   )
 ```
 
-### Fully-adjusted 
-```{r}
+```{r, include=FALSE}
 # Fully adjusted model
 fit.cox.full.adj <- coxph(
   as.formula(
@@ -750,24 +706,19 @@ cox.full <- tidy(
   )
 ```
 
-### Exporting Cox PH Results
-```{r}
+```{r, include=FALSE}
 write_csv(cox.age, "cox_ageadj_results.csv")
 write_csv(cox.minimal, "cox_minimal_results.csv")
 write_csv(cox.full, "cox_full_results.csv")
 ```
 
-### Schoenfeld Residuals Check
-
-#### For Niacin Quartile
-```{r}
+```{r, include=FALSE}
 #checking Schoenfeld Residuals
 check.pha<-cox.zph(fit.cox.full.adj)
 ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
 ```
 
-#### For all covariates
-```{r}
+```{r, include=FALSE}
 form.test.cox <- as.formula(
   paste(
     "Surv(age_tstart, age_tend, event) ~ niacin_q +",
@@ -798,11 +749,7 @@ dev.off()
 par(mfrow = c(1, 1))
 ```
 
-## Table 1 Code 
-
-Purpose: Describing relevant basic characteristics of study participants according to exposure categories of your choice
-
-```{r}
+```{r, include=FALSE}
 table.1<-nhanes_final_2 %>% 
   arrange(niacin_q) %>% 
   mutate(niacin_cat=factor(niacin_q,levels=c(1,2,3,4)),
@@ -846,9 +793,7 @@ options(digits = 2)
 print(t1, showAllLevels = TRUE)
 ```
 
-## Appendix (for fun): forest plot
-
-```{r, eval = FALSE}
+```{r, eval = FALSE, include=FALSE}
 forest_df <- bind_rows(
   tidy_poisson1 %>% mutate(model = "Model 1"),
   tidy_poisson2 %>% mutate(model = "Model 2"),
