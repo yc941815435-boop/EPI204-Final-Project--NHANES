@@ -1,8 +1,10 @@
 ---
-title: "EPI 204: Final Project Code Appendix"
+title: "EPI 204 Spring 2026: Final Project Code Appendix"
 author: "Andra Boca, Parker Tope, Yvonne Chen, Billy Huang, Camryn Dixon"
-output: html_document
-date: "2026-04-30"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-05-15"
 ---
 
 ```{r setup, include=FALSE}
@@ -30,7 +32,7 @@ nhanes <- read_csv(paste0(DirPath, "/data/NHANES2.csv"))
 length(unique(nhanes$SEQNO)) == nrow(nhanes)
 ```
 
-```{r, include=FALSE}
+```{r}
 ## Select variables of interest
 nhanes_analytic <- nhanes |>
   select(
@@ -50,12 +52,10 @@ nhanes_analytic <- nhanes |>
   )
 ```
 
-```{r, include=FALSE}
+```{r}
 ### Review covariate missingness
 library(naniar)
-gg_miss_var(nhanes_analytic)
-
-# AB: AGEDIE, DIE_YR are not well populated (~80% missing) though DEATH outcome is not that bad (~17.8% missing); just checked and it's because AGEDIE and DIE_YR are listed NA for those who have DEATH = 1; let's keep even with missing - these are not covars
+# gg_miss_var(nhanes_analytic)
 
 nhanes_analytic_missingness <- nhanes_analytic |>
   select(
@@ -80,14 +80,8 @@ nhanes_analytic_missingness_table <- miss_var_summary(nhanes_analytic_missingnes
     pct_miss = as.numeric(pct_miss)
   )
 
-write.csv(nhanes_analytic_missingness_table, "nhanes_missing.csv", row.names = FALSE)
-
-table(nhanes$AGEDIE, nhanes$DEATH, useNA = "ifany") # AB: no data for those 2,008 we're excluding. those with NA for AGEDIE are coded as 0 for DEATH
-
-table(nhanes_analytic$EVPREG, nhanes_analytic$SEX)
-# EVPREG missing only for assigned male at birth; keep but may only be usable for analysis among those assigned female at birth? Check notes below.
-
-# AB: Test out N for final analytical sample if we keep only participants with covariates of interest (except those highlighted above)
+# Produce final analytical sample keeping only participants with covariates of interest 
+# that have any missing values 
 nhanes_final <- nhanes_analytic |>
   filter(!is.na(NIACIN),
          !is.na(ANGINA),
@@ -133,21 +127,19 @@ nhanes_final <- nhanes_final |>
 nhanes_final$niacin_q <- as.factor(nhanes_final$niacin_q)
 ```
 
-```{r, include=FALSE}
+```{r}
 # Variable Operationalization
 # BMI, person-time
 nhanes_final_2 <- nhanes_final |>
 mutate(
-  # PRT: using age as the time scale; person-time accumulates in age years
-  # PRT: time zero is age at entry
+  # Using age as the time scale; person-time accumulates in age years
+  # Time zero is age at entry
   age_tstart = AGEYRS,
-  # PRT: end of follow up is censoring or death
-  # age_tend = LAST_YR - BORN_YR,
+  # End of follow up is censoring or death
   age_tend = if_else(!is.na(AGEDIE), AGEDIE, LAST_YR - BORN_YR),
   person_time = age_tend - age_tstart,
   event = if_else(!is.na(AGEDIE) & DEATH == 1, 1, 0),
   BMI = WT/(HEIGHT/100)^2,
-  # 1 = female, 0 = male
   SEX = if_else(SEX == 2, 1, 0)
 )
 
@@ -157,7 +149,7 @@ nhanes_model <- nhanes_final_2 |>
     person_time > 0
   )
 
-summary(nhanes_model$person_time) # PRT: min 1 and max 17 years of FU
+summary(nhanes_model$person_time) # min 1 and max 17 years of FU
 
 ```
 
@@ -177,7 +169,7 @@ nhanes_final$STROKE <- as.factor(nhanes_final$STROKE)
 
 ### Covariate List
 ```{r}
-# Covariates list (so it's easy to update here only once if changed and automatically update all models downstream)
+# Dynamically updating lists of covariates (to automatically update all models downstream)
 cov_basic <- c(
   "SEX",
   "RACE",
@@ -204,7 +196,7 @@ cov_full <- c(
 ## Primary Analysis: Poisson Model
 
 ### Generating person-year dataset
-```{r, include=FALSE}
+```{r}
 nhanes_final_poisson <- nhanes_model |>
   uncount(person_time, .id = "pt_year", .remove = FALSE) |>
   mutate(
@@ -535,13 +527,13 @@ nhanes_deaths_niacin_q <- table(nhanes_final_poisson$death_in_year, nhanes_final
 nhanes_deaths_niacin_q
 
 # Export CSVs
-write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
-write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
-write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
-write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
-write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
-write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
-write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson1, "nhanes_poisson_1_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson2, "nhanes_poisson_2_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson3, "nhanes_poisson_3_results.csv", row.names = FALSE)
+# write.csv(hr.emm.sex, "nhanes_poisson_4_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson4, "nhanes_poisson_4_1_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson5, "nhanes_poisson_5_results.csv", row.names = FALSE)
+# write.csv(tidy_poisson6, "nhanes_poisson_6_results.csv", row.names = FALSE)
 ```
 
 ```{r, include=FALSE}
@@ -585,7 +577,7 @@ fit.pois1.3.3 <- glm(form.pois1.3.3,
                  family=poisson(link='log'))
 ```
 
-```{r, include=FALSE}
+```{r}
 # LRT #1: Compare 1.3.1 [null] to 1.3.2 [alternative]
 lrtest(fit.pois1.3.1, fit.pois1.3.2)
 
@@ -596,7 +588,7 @@ lrtest(fit.pois1.3.1, fit.pois1.3.3)
 lrtest(fit.pois1.3.2, fit.pois1.3.3)
 ```
 
-```{r, include=FALSE}
+```{r}
 ## Model 1.3.4
 form.pois1.3.4 <- as.formula(
   paste(
@@ -624,12 +616,13 @@ fit.pois1.3.5 <- glm(form.pois1.3.5,
                  family=poisson(link='log'))
 ```
 
-```{r, include=FALSE}
+```{r}
 # LRT #4: Compare 1.3.4 [null] to 1.3.5 [alternative]
 lrtest(fit.pois1.3.4, fit.pois1.3.5)
 ```
 
-```{r, include=FALSE}
+## Cox Proportional Hazards Sensitivity Models
+```{r}
 # Age adjusted model
 fit.cox.unadj <- coxph(
   Surv(age_tstart, age_tend, event) ~ niacin_q,
@@ -652,7 +645,7 @@ cox.age <- tidy(
   )
 ```
 
-```{r, include=FALSE}
+```{r}
 # Minimally adjusted model
 fit.cox.min.adj <- coxph(
   as.formula(
@@ -679,7 +672,7 @@ cox.minimal <- tidy(
   )
 ```
 
-```{r, include=FALSE}
+```{r}
 # Fully adjusted model
 fit.cox.full.adj <- coxph(
   as.formula(
@@ -707,15 +700,15 @@ cox.full <- tidy(
 ```
 
 ```{r, include=FALSE}
-write_csv(cox.age, "cox_ageadj_results.csv")
-write_csv(cox.minimal, "cox_minimal_results.csv")
-write_csv(cox.full, "cox_full_results.csv")
+# write_csv(cox.age, "cox_ageadj_results.csv")
+# write_csv(cox.minimal, "cox_minimal_results.csv")
+# write_csv(cox.full, "cox_full_results.csv")
 ```
 
-```{r, include=FALSE}
+```{r}
 #checking Schoenfeld Residuals
 check.pha<-cox.zph(fit.cox.full.adj)
-ggcoxzph(check.pha[1]) #AB: PH holds - checked with Mingyang
+ggcoxzph(check.pha[1]) 
 ```
 
 ```{r, include=FALSE}
@@ -749,7 +742,7 @@ dev.off()
 par(mfrow = c(1, 1))
 ```
 
-```{r, include=FALSE}
+```{r}
 table.1<-nhanes_final_2 %>% 
   arrange(niacin_q) %>% 
   mutate(niacin_cat=factor(niacin_q,levels=c(1,2,3,4)),
@@ -792,40 +785,6 @@ t1 <- CreateTableOne(vars = vars, data = table.1, strata = as.factor("niacin_q")
 options(digits = 2)
 print(t1, showAllLevels = TRUE)
 ```
-
-```{r, eval = FALSE, include=FALSE}
-forest_df <- bind_rows(
-  tidy_poisson1 %>% mutate(model = "Model 1"),
-  tidy_poisson2 %>% mutate(model = "Model 2"),
-  tidy_poisson3 %>% mutate(model = "Model 3")
-) %>%
-  filter(term %in% c("niacin_q2", "niacin_q3", "niacin_q4")) %>%
-  mutate(term = recode(term,
-    "niacin_q2" = "Q2 vs Q1",
-    "niacin_q3" = "Q3 vs Q1",
-    "niacin_q4" = "Q4 vs Q1"
-  ))
-
-
-ggplot(forest_df,
-       aes(x = RR,
-           y = model,
-           xmin = RR_low,
-           xmax = RR_high,
-           color = model)) +
-  geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_errorbarh(position = position_dodge(width = 0.5), height = 0.2) +
-  geom_vline(xintercept = 1, linetype = "dashed") +
-  scale_x_log10() +
-  labs(
-    x = "Hazard Ratio (95% CI)",
-    y = "Model",
-    title = "Association Between Niacin Quartile and Mortality"
-  ) +
-  theme_bw()
-```
-
-
 
 
 
